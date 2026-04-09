@@ -1,0 +1,17 @@
+# --- Model Fine-Tuning ---
+torch
+transformers
+datasets
+evaluate
+scikit-learn
+pandas
+numpy
+accelerate
+
+# --- API & Web Server ---
+fastapi
+uvicorn[standard]
+pydantic
+
+# --- Testing ---
+locust

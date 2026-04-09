@@ -14,7 +14,7 @@ from transformers import (
 
 MODEL_NAME = "distilbert-base-uncased"
 OUTPUT_DIR = "./claim_detection_model"
-DATA_FILE = "2xNCS.json"
+DATA_FILE = "./datasets/2xNCS.json"
 
 def load_and_preprocess_data(json_path):
     """Loads the ClaimBuster JSON and splits it 80/20."""
@@ -70,7 +70,7 @@ def main():
 
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,
-        evaluation_strategy="epoch",  
+        eval_strategy="epoch",  
         save_strategy="epoch",        
         learning_rate=2e-5,
         per_device_train_batch_size=16,

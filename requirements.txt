@@ -8,6 +8,9 @@ pandas
 numpy
 accelerate
 
+# --- Visualization ---
+matplotlib
+seaborn
 # --- API & Web Server ---
 fastapi
 uvicorn[standard]

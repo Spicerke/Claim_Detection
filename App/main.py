@@ -71,10 +71,12 @@ def predict_claim(request: ClaimRequest):
     probs = torch.nn.functional.softmax(logits, dim=-1)
     confidence_score_decimal = probs[0][1].item()
     
-    # If the probability is > 70%, we classify it as a claim
-    is_claim = bool(confidence_score_decimal > 0.7)
+    # If the probability is > 50%, we classify it as a claim
+    is_claim = bool(confidence_score_decimal > 0.5)
     confidence_pct = round(confidence_score_decimal * 100, 2)
-
+    
+    if is_claim == False:
+        confidence_pct = round((1 - confidence_score_decimal) * 100, 2)
     if len(prediction_cache) >= CACHE_MAX_SIZE:
         prediction_cache.pop(next(iter(prediction_cache)))
         

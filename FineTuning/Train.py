@@ -14,7 +14,7 @@ from transformers import (
 
 MODEL_NAME = "distilbert-base-uncased"
 OUTPUT_DIR = "./claim_detection_model"
-DATA_FILE = "./datasets/2xNCS.json"
+DATA_FILE = "./datasets/3xNCS.json"
 
 def load_and_preprocess_data(json_path):
     """Loads the ClaimBuster JSON and splits it 80/20."""
@@ -47,7 +47,6 @@ def compute_metrics(eval_pred):
     acc = accuracy_score(labels, predictions)
     precision = precision_score(labels, predictions, average="binary")
     recall = recall_score(labels, predictions, average="binary")
-    
     return {
         "accuracy": acc, 
         "f1": f1,

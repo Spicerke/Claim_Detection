@@ -18,9 +18,11 @@ This project is a full-stack machine learning application designed to identify w
 - *Deployment*: The entire stack is containerized using Docker for environment parity. 
 
 # Data Modeling and Trainer 
-*Dataset: ClaimBuster*
-- Mapping:
-    - Label 2: Uncheck-worthy factual statments. 
+*Datasets: [ClaimBuster](https://zenodo.org/records/3836810) & [FeverClaims](https://fever.ai/dataset/fever.html)*
+
+## Data Proccessing 
+In order to ensure that we had a good mix of claims and non-claims along with a breadth of domains 2 datasets were combined. The ClaimBusters dataset was our main dataset but it was weighted towards non-factual statments so the FeverClaims dataset was brought in and proccessed and combined with the Claimbusters to make our final training dataset 
+- Mapping: 
     - Label 1: Check-worthy factual statements.
     - Label 0: Non-factual statements.
 
@@ -28,6 +30,18 @@ This project is a full-stack machine learning application designed to identify w
 1. *Preprocessing*: Tokenization via DistilBertTokenizer.
 2. *Split*: 80% training / 20% testing.
 3. *Metrics*: Focus on F1-Score, Precision, and Recall to ensure the model handles class imbalances effectively.
+    ```
+    ==============================
+    📊 MODEL EVALUATION METRICS 📊
+    ==============================
+    Accuracy:  0.9424
+    F1 Score:  0.9416
+    Precision: 0.9542
+    Recall:    0.9294
+    ==============================
+    ```
+    ![confusion matrix](FineTuning/confusion_matrix.png)
+    ![Precison_curve](FineTuning/precision_recall_curve.png)
 
 # API and Security 
 *API: FastAPI* 
@@ -56,5 +70,5 @@ docker run -p 8000:8000 claim-detection-api
 # Setup 
 1. Clone the repo: ```git clone https://github.com/Spicerke/Claim_Detection```
 2. Install dependencies: ```pip install -r requirements.txt```
-3. Run the API: ```uvicorn main:app --reload ```
+3. Run startup script: ```App/start.sh ```
 4. Access Swagger Documentation: ```http://localhost:8000/docs```

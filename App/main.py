@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 import torch
 import time
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from fastapi.middleware.cors import CORSMiddleware
 
 MODEL_DIR = "/Users/kaispicer/Desktop/Claim_Detection/FineTuning/claim_detection_model"
 
@@ -10,6 +11,14 @@ app = FastAPI(
     title="Claim Detection API",
     description="An API that determines if a natural language sentence contains a factual claim.",
     version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  
+    allow_credentials=True,
+    allow_methods=["*"], 
+    allow_headers=["*"],  
 )
 
 # Caching System 

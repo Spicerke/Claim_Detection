@@ -19,7 +19,7 @@ from transformers import (
 
 # --- Configuration ---
 MODEL_DIR = "./claim_detection_model"
-DATA_FILE = "./datasets/3xNCS.json"
+DATA_FILE = "./datasets/balanced_training_data.json"
 
 def load_test_data(json_path):
     """Recreates the exact 20% test split used during training."""

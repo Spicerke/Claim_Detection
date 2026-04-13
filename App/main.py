@@ -1,11 +1,19 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 import torch
 import time
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from fastapi.middleware.cors import CORSMiddleware
 
+# --- SlowAPI Imports ---
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 MODEL_DIR = "/Users/kaispicer/Desktop/Claim_Detection/FineTuning/claim_detection_model"
+
+# Initialize Limiter using the client's IP address
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="Claim Detection API",
@@ -13,10 +21,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# --- Register SlowAPI with FastAPI ---
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Caching System 
-CACHE_MAX_SIZE = 10000 #local memory cache, would likely update to Redis or SQlite in 
-#next itetations 
+CACHE_MAX_SIZE = 10000 #local memory cache, would likely update to Redis or SQlite in next iterations 
 prediction_cache = {}
 
 print("Loading DistilBERT model into memory...")
@@ -34,15 +44,18 @@ class ClaimResponse(BaseModel):
     cached: bool
     processing_time_ms: float
 
-#API Endpoints
+# API Endpoints
+
 @app.get("/health")
-def health_check():
+@limiter.limit("10/minute") # Strict limit for health checks
+def health_check(request: Request): # Request parameter is required by slowapi
     return {"status": "API is healthy and model is loaded."}
 
 @app.post("/predict", response_model=ClaimResponse)
-def predict_claim(request: ClaimRequest):
+@limiter.limit("5/second") # Blocks spam, but allows standard UI usage
+def predict_claim(request: Request, payload: ClaimRequest): # Renamed to payload to avoid collision
     start_time = time.time()
-    input_text = request.text.strip()
+    input_text = payload.text.strip()
 
     if input_text in prediction_cache:
         cached_result = prediction_cache[input_text]
@@ -77,6 +90,7 @@ def predict_claim(request: ClaimRequest):
     
     if is_claim == False:
         confidence_pct = round((1 - confidence_score_decimal) * 100, 2)
+        
     if len(prediction_cache) >= CACHE_MAX_SIZE:
         prediction_cache.pop(next(iter(prediction_cache)))
         
@@ -86,7 +100,7 @@ def predict_claim(request: ClaimRequest):
     }
     process_time = (time.time() - start_time) * 1000
 
-    #Return Response
+    # Return Response
     return ClaimResponse(
         is_claim=is_claim,
         confidence=confidence_pct,

@@ -10,7 +10,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-MODEL_DIR = "/Users/kaispicer/Desktop/Claim_Detection/FineTuning/claim_detection_model"
+MODEL_DIR = "./claim_detection_model"
 
 # Initialize Limiter using the client's IP address
 limiter = Limiter(key_func=get_remote_address)

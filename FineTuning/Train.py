@@ -13,7 +13,7 @@ from transformers import (
 )
 
 MODEL_NAME = "distilbert-base-uncased"
-OUTPUT_DIR = "./claim_detection_model"
+OUTPUT_DIR = "../App/claim_detection_model"
 DATA_FILE = "./datasets/balanced_training_data.json"
 
 def load_and_preprocess_data(json_path):

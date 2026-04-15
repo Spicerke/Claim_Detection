@@ -4,7 +4,7 @@ import requests
 app = Flask(__name__)
 
 # URL of your running FastAPI backend
-FASTAPI_URL = "http://127.0.0.1:8000/predict"
+FASTAPI_URL = "http://backend:8000/predict"
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -25,4 +25,4 @@ def index():
     return render_template("index.html")
 
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)

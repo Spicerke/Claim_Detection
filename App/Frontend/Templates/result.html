@@ -22,7 +22,7 @@
         <div class="result-box">
             <p><strong>Classification:</strong> 
                 <span class="{% if result.is_claim %}claim-true{% else %}claim-false{% endif %}">
-                    {% if result.is_claim %}Factual Claim{% else %}Not a Claim{% endif %}
+                    {% if result.is_claim %}Fact-checkable Claim{% else %}Not a Claim{% endif %}
                 </span>
             </p>
             <p><strong>Confidence:</strong> {{ result.confidence }}%</p>

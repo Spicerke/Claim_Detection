@@ -30,7 +30,7 @@ Environment="PYTHONFAULTHANDLER=1"
 # Bind to loopback ONLY. cloudflared is the sole path in from the internet, which
 # is what makes trusting the CF-Connecting-IP header for rate limiting safe.
 # One worker: each worker loads its own ~270MB copy of the model.
-ExecStart=__REPO__/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1
+ExecStart=__REPO__/.venv/bin/uvicorn main:app --host 127.0.0.1 --port __PORT__ --workers 1
 
 Restart=always
 RestartSec=5

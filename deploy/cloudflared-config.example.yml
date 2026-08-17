@@ -4,6 +4,9 @@
 # ~/.cloudflared/config.yml (user service). You already have a tunnel running --
 # the only change needed is adding the hostname -> localhost:8000 ingress rule
 # below and pointing a DNS record at the tunnel.
+#
+# If you installed the API on a non-default port (API_PORT=... on
+# deploy/install-pi.sh), change the port in the service: line below to match.
 
 tunnel: <YOUR-TUNNEL-UUID>
 credentials-file: /etc/cloudflared/<YOUR-TUNNEL-UUID>.json

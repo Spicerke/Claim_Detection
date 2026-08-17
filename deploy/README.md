@@ -131,6 +131,17 @@ cd ~/Claim_Detection
 ALLOWED_ORIGINS=https://spicerke.github.io ./deploy/install-pi.sh
 ```
 
+If port 8000 is already taken on the Pi (another service, a stray container),
+set `API_PORT`. The installer checks the port up front and refuses to start
+rather than leaving you with a restart loop:
+
+```bash
+API_PORT=8005 ALLOWED_ORIGINS=https://spicerke.github.io ./deploy/install-pi.sh
+```
+
+The port is baked into the systemd unit at install time, so **the cloudflared
+ingress rule in step 4 has to point at the same port.**
+
 This creates a venv, installs dependencies, renders
 [`claim-api.service`](claim-api.service) into `/etc/systemd/system/`, enables it
 at boot, and waits for `/health` to answer.
@@ -142,7 +153,7 @@ trailing slash. For `https://spicerke.github.io/Claim_Detection/`, the origin is
 Verify locally on the Pi:
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/health          # or your API_PORT
 curl -X POST http://127.0.0.1:8000/predict \
   -H 'Content-Type: application/json' \
   -d '{"text":"The Eiffel Tower is 330 meters tall."}'
@@ -156,7 +167,7 @@ Add an ingress rule to your existing `cloudflared` config (see
 ```yaml
 ingress:
   - hostname: claims.yourdomain.com
-    service: http://localhost:8000
+    service: http://localhost:8000   # must match API_PORT from step 3
     originRequest:
       connectTimeout: 30s
   - service: http_status:404
@@ -261,6 +272,11 @@ exactly two files: `model.onnx` at ~256MB and `tokenizer.json` at ~700KB.
 **`Fatal Python error: Illegal instruction`** — something reinstalled torch.
 `.venv/bin/pip list | grep -i torch` should return nothing; see "Why ONNX Runtime
 and not PyTorch" above.
+
+**Restart loop, logs show `[Errno 98] error while attempting to bind`** — the
+model loaded fine; something else owns the port. `sudo ss -tlnp | grep :8000`
+names it. Either stop that process or reinstall with `API_PORT=<other>` (and
+update the cloudflared ingress rule to match).
 
 **Service killed during startup** — out of memory. Check `dmesg | grep -i oom`.
 Add swap or use a Pi with more RAM.

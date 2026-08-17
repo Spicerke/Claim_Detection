@@ -8,6 +8,13 @@ pandas
 numpy
 accelerate
 
+# --- ONNX export (FineTuning/export_onnx.py) ---
+# The Pi serves the model with onnxruntime instead of torch; see deploy/README.md.
+# onnxscript is required by torch's exporter from torch 2.6 onward.
+onnx
+onnxruntime
+onnxscript
+
 # --- Visualization ---
 matplotlib
 seaborn

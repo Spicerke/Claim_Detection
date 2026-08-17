@@ -6,6 +6,8 @@ FineTuning/logs/
 *.bin
 *.pt
 *.pth
+*.onnx
+*.onnx.data
 
 # --- Python ---
 __pycache__/

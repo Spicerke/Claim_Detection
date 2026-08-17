@@ -18,8 +18,14 @@ Environment="MODEL_DIR=__MODEL_DIR__"
 Environment="ALLOWED_ORIGINS=__ORIGINS__"
 
 # A 4-core Pi: leave headroom so concurrent requests don't fight over cores.
-Environment="TORCH_THREADS=2"
+Environment="ORT_THREADS=2"
 Environment="OMP_NUM_THREADS=2"
+
+# Without this, Python block-buffers stdout when it isn't a TTY -- so if the
+# process is signal-killed, the startup prints AND any traceback are lost and
+# the journal shows only systemd's own "Main process exited" lines.
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONFAULTHANDLER=1"
 
 # Bind to loopback ONLY. cloudflared is the sole path in from the internet, which
 # is what makes trusting the CF-Connecting-IP header for rate limiting safe.

@@ -1,24 +1,25 @@
-# Backend runtime dependencies (CPU-only; installs clean on Raspberry Pi arm64).
+# Backend runtime dependencies. CPU-only, ~150MB installed, no torch.
+#
+# Inference runs on ONNX Runtime rather than PyTorch. This is not a preference --
+# the aarch64 torch wheels are built with SIMD kernels targeting Neoverse-class
+# cores, and a Raspberry Pi 5 (Cortex-A76) has neither SVE nor BF16, so
+# libtorch_cpu.so dies with SIGILL the instant it loads. onnxruntime ships
+# baseline ARMv8 builds, and measured 3.4x faster than torch on this model.
+#
+# Training still uses torch -- see the root requirements.txt and
+# FineTuning/export_onnx.py, which converts the trained checkpoint to model.onnx.
 
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
 pydantic>=2.9,<3.0
 slowapi>=0.1.9
 
-# The checkpoint was saved with transformers 5.x (config.json uses the `dtype`
-# key). Pinning to 5.x avoids a silent mismatch on a fresh install.
-transformers>=5.1,<6.0
+# >=1.17 because the exported graph is opset 18 (torch emits a fused
+# LayerNormalization node that cannot be lowered to an earlier opset).
+onnxruntime>=1.17
 
-# The <2.11 ceiling is load-bearing on ARM, not cosmetic.
-#
-# Through 2.10.0, torch gated its CUDA dependencies on
-#   platform_system == "Linux" and platform_machine == "x86_64"
-# so an aarch64 install got a clean CPU-only build. From 2.11.0 the machine gate
-# was dropped and the marker is just platform_system == "Linux" -- so pip happily
-# installs ~1.25GB of nvidia-cudnn/nccl/cusparselt/triton aarch64 wheels (~2.5GB
-# unpacked) onto a Raspberry Pi that has no GPU. That overflows /tmp on Pi OS,
-# where it is a RAM-backed tmpfs, and the install dies with ENOSPC.
-#
-# The PyTorch CPU index (download.pytorch.org/whl/cpu) is not a workaround --
-# its newest aarch64 wheel is torch 2.0.1.
-torch>=2.4,<2.11
+# tokenizer.json is a self-contained fast-tokenizer definition, so we load it
+# with `tokenizers` directly instead of pulling in all of transformers -- which
+# would drag torch back onto the Pi as a dependency.
+tokenizers>=0.21
+numpy>=1.24

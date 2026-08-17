@@ -20,21 +20,29 @@ echo "Model dir: $MODEL_DIR"
 echo "Origins:   $ALLOWED_ORIGINS"
 echo
 
-# --- 1. Sanity-check the weights before doing any work ---
-for f in config.json model.safetensors tokenizer.json tokenizer_config.json; do
+# --- 1. Sanity-check the model before doing any work ---
+# Only two files are needed for inference: the exported ONNX graph and the
+# tokenizer definition. Produce model.onnx with FineTuning/export_onnx.py.
+for f in model.onnx tokenizer.json; do
     if [[ ! -f "$MODEL_DIR/$f" ]]; then
         echo "ERROR: missing $MODEL_DIR/$f" >&2
         echo "Copy the model files to the Pi first (see deploy/README.md)." >&2
         exit 1
     fi
 done
-echo "✓ Model files present"
+# A truncated scp leaves a valid-looking but unloadable file; catch it here
+# rather than at service start.
+ONNX_MB=$(( $(stat -c %s "$MODEL_DIR/model.onnx" 2>/dev/null || echo 0) / 1048576 ))
+if (( ONNX_MB < 200 )); then
+    echo "ERROR: $MODEL_DIR/model.onnx is only ${ONNX_MB}MB, expected ~256MB." >&2
+    echo "The transfer was probably truncated -- re-copy it." >&2
+    exit 1
+fi
+echo "✓ Model files present (model.onnx ${ONNX_MB}MB)"
 
-# --- 1b. Check free space before starting a 15-minute install ---
-# The dependency tree lands at ~600-700MB installed, but pip needs roughly
-# double that in flight (download + unpack). Fail now with a clear message
-# rather than dying with ENOSPC partway through the torch install.
-REQUIRED_MB=1500
+# --- 1b. Check free space before starting the install ---
+# The dependency tree is ~150MB installed; pip needs roughly double in flight.
+REQUIRED_MB=600
 AVAIL_MB="$(df -Pm "$REPO" | awk 'NR==2 {print $4}')"
 if (( AVAIL_MB < REQUIRED_MB )); then
     echo "ERROR: only ${AVAIL_MB}MB free on the filesystem holding $REPO." >&2
@@ -44,6 +52,15 @@ if (( AVAIL_MB < REQUIRED_MB )); then
     exit 1
 fi
 echo "✓ ${AVAIL_MB}MB free"
+
+# --- 1c. Refuse to run on a stale venv that still has torch in it ---
+# Installing over a torch venv leaves ~700MB of dead weight and, worse, an
+# onnxruntime install that appears fine while the old SIGILL-ing torch is still
+# importable. Start clean instead.
+if [[ -d "$REPO/.venv" ]] && "$REPO/.venv/bin/python" -c "import torch" 2>/dev/null; then
+    echo "Existing venv contains torch (no longer used). Removing it..."
+    rm -rf "$REPO/.venv"
+fi
 
 # --- 2. Virtualenv ---
 if [[ ! -d "$REPO/.venv" ]]; then

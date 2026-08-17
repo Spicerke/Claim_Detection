@@ -38,49 +38,52 @@ If `uname -m` prints `armv7l`, reflash with the 64-bit Raspberry Pi OS image.
 
 | | Size |
 |---|---|
-| `torch` | ~350-450 MB |
-| `transformers`, `numpy`, `sympy`, `tokenizers`, and other deps | ~200 MB |
-| `fastapi` + `uvicorn` + `slowapi` | ~10 MB |
-| **venv total** | **~600-700 MB** |
-| model weights | 270 MB |
-| **peak during install** | **~1.5 GB** |
+| `onnxruntime` | ~16 MB |
+| `numpy` | ~16 MB |
+| `tokenizers` | ~9 MB |
+| `fastapi` + `uvicorn` + `pydantic` + `slowapi` | ~15 MB |
+| **venv total** | **~150 MB** |
+| `model.onnx` | 256 MB |
 
-`install-pi.sh` checks for 1500 MB up front and refuses to start otherwise. It
-also passes `--no-cache-dir` (pip otherwise keeps a second full copy of every
-wheel in `~/.cache/pip`) and points `TMPDIR` at a disk-backed scratch directory.
+`install-pi.sh` checks for 600 MB free up front, passes `--no-cache-dir` (pip
+otherwise keeps a second copy of every wheel in `~/.cache/pip`), and points
+`TMPDIR` at a disk-backed scratch dir — Pi OS mounts `/tmp` as a RAM-backed
+tmpfs, which can overflow during unpacking even with plenty of disk free.
+
+## Why ONNX Runtime and not PyTorch
+
+This is the part worth knowing if you ever revisit the dependency list.
+
+**`pip install torch` does not work on a Raspberry Pi 5.** It installs, then dies
+with `Fatal Python error: Illegal instruction` inside `torch/__init__.py` the
+moment `libtorch_cpu.so` loads. The aarch64 torch wheels are built with SIMD
+kernels targeting Neoverse-class server cores; the Pi 5's Cortex-A76 implements
+ARMv8.2-A but has neither SVE nor BF16, so those kernels are literally
+un-executable instructions. The wheel size tells the story — 99 MB at torch
+2.9.1, 139 MB at 2.10.0, 400 MB at 2.11.0.
+
+There is also a second, independent torch problem on ARM: from **2.11.0** torch
+stopped gating its CUDA dependencies on `platform_machine == "x86_64"` (the
+marker is now just `platform_system == "Linux"`). NVIDIA publishes aarch64
+wheels, so pip cheerfully installs ~1.25 GB of `nvidia-cudnn` / `nccl` /
+`cusparselt` / `triton` — about 2.5 GB unpacked — onto a board with no GPU. That
+overflows the tmpfs `/tmp` and fails with `[Errno 28] No space left on device`
+while `df -h /` still shows tens of GB free.
+
+ONNX Runtime sidesteps both: baseline ARMv8 builds, no CUDA dependencies, 16 MB,
+and **measured 3.4x faster** than torch on this model. The tradeoff is the export
+step, and that inference code can no longer use `transformers` — but
+`tokenizer.json` is a self-contained fast-tokenizer definition, so the `tokenizers`
+package alone reproduces the exact same token ids.
+
+Verified before the switch: identical token ids and identical predictions across
+12 adversarial inputs (empty-ish, unicode, emoji, 200-word truncation, mixed
+case, punctuation, HTML), with a max logit delta of `1.19e-06` between torch and
+ONNX.
 
 ### `[Errno 28] No space left on device`
 
-**Almost always this is torch dragging CUDA onto your GPU-less Pi.** From version
-2.11.0, torch stopped gating its nvidia dependencies on `platform_machine ==
-"x86_64"` — the marker is now just `platform_system == "Linux"`. NVIDIA publishes
-aarch64 wheels, so pip dutifully installs them:
-
-| package | compressed |
-|---|---|
-| `nvidia-cudnn-cu13` | 621 MB |
-| `nvidia-nccl-cu13` | 241 MB |
-| `nvidia-cusparselt-cu13` | 213 MB |
-| `triton` | 176 MB |
-| | **~1.25 GB (~2.5 GB unpacked)** |
-
-Pi OS mounts `/tmp` as a RAM-backed tmpfs (typically half of RAM, so ~1.9 GB on a
-4 GB Pi). Unpacking 2.5 GB into it fails with ENOSPC **even with 49 GB free on
-`/`** — which is what makes this error so confusing.
-
-`App/requirements.txt` pins `torch>=2.4,<2.11` for exactly this reason. Don't
-raise that ceiling for the Pi. Note that the PyTorch CPU index
-(`download.pytorch.org/whl/cpu`) is *not* an alternative — its newest aarch64
-wheel is torch 2.0.1.
-
-Verify you got a clean install:
-
-```bash
-~/Claim_Detection/.venv/bin/pip list 2>/dev/null | grep -ci nvidia   # must be 0
-du -sh ~/Claim_Detection/.venv                                        # ~600-700MB, not 3GB+
-```
-
-Other causes, if the above checks out:
+Should not happen now that torch is gone (~150 MB total), but if it does:
 
 1. **The filesystem was never expanded.** If you flashed a 32GB card but `df -h /`
    shows only a few GB: `sudo raspi-config --expand-rootfs && sudo reboot`
@@ -94,20 +97,31 @@ sudo apt update && sudo apt install -y python3-venv git
 git clone https://github.com/Spicerke/Claim_Detection.git ~/Claim_Detection
 ```
 
-### 2. Copy the weights over
+### 2. Export the model to ONNX and copy it over
 
-The weights are **not** in git (256MB of `model.safetensors` plus 2.3GB of
-training checkpoints). Copy the four files the API actually needs from your Mac:
+The Pi runs inference on ONNX Runtime, not PyTorch. Export first, on the machine
+that has torch installed:
 
 ```bash
-# Run this on your Mac, from the repo root:
+# On your Mac, from the repo root:
+python FineTuning/export_onnx.py
+```
+
+This writes `App/claim_detection_model/model.onnx` (~256MB, weights inlined) and
+verifies it against the torch model before declaring success — it exits non-zero
+if the outputs diverge.
+
+Then copy the only two files the API needs:
+
+```bash
 ssh pi@raspberrypi.local 'mkdir -p ~/claim-model'
-scp App/claim_detection_model/{config.json,model.safetensors,tokenizer.json,tokenizer_config.json} \
+scp App/claim_detection_model/{model.onnx,tokenizer.json} \
     pi@raspberrypi.local:~/claim-model/
 ```
 
-That's ~268MB total; the `checkpoint-*` folders are training state (optimizer
-moments, RNG state) and are not needed for inference.
+Nothing else goes over: not `model.safetensors`, not `config.json`, and
+certainly not the `checkpoint-*` folders (2.3GB of optimizer and RNG state used
+only for resuming training).
 
 ### 3. Install and start the service
 
@@ -240,9 +254,13 @@ editing the unit (`sudo systemctl daemon-reload && sudo systemctl restart claim-
 **502 from the tunnel** — `cloudflared` is up but the API isn't.
 `sudo systemctl status claim-api`.
 
-**Service won't start, logs show `OSError`/`can't load tokenizer`** — `MODEL_DIR`
-is wrong or the files didn't copy. `ls -la ~/claim-model` should show four files
-with `model.safetensors` at ~268MB.
+**Service won't start, logs show `NoSuchFile` / `Failed to load model`** —
+`MODEL_DIR` is wrong or the files didn't copy. `ls -la ~/claim-model` should show
+exactly two files: `model.onnx` at ~256MB and `tokenizer.json` at ~700KB.
+
+**`Fatal Python error: Illegal instruction`** — something reinstalled torch.
+`.venv/bin/pip list | grep -i torch` should return nothing; see "Why ONNX Runtime
+and not PyTorch" above.
 
 **Service killed during startup** — out of memory. Check `dmesg | grep -i oom`.
 Add swap or use a Pi with more RAM.

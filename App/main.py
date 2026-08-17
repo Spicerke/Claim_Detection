@@ -1,11 +1,12 @@
 import os
 import time
 
-import torch
+import numpy as np
+import onnxruntime as ort
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from tokenizers import Tokenizer
 
 # --- SlowAPI Imports ---
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -14,9 +15,14 @@ from slowapi.errors import RateLimitExceeded
 
 # --- Configuration (env-driven so the Pi and a laptop can differ) ---
 
-# On the Pi the weights live outside the repo and are bind-mounted / pointed at
-# via this variable. Locally it falls back to the folder next to this file.
+# On the Pi the weights live outside the repo and are pointed at via this
+# variable. Locally it falls back to the folder next to this file.
+# Expected contents: model.onnx and tokenizer.json (see FineTuning/export_onnx.py).
 MODEL_DIR = os.getenv("MODEL_DIR", "./claim_detection_model")
+MODEL_PATH = os.path.join(MODEL_DIR, "model.onnx")
+TOKENIZER_PATH = os.path.join(MODEL_DIR, "tokenizer.json")
+
+MAX_LENGTH = 128
 
 # Browsers block cross-origin calls unless the API says the origin is allowed.
 # The GitHub Pages frontend is a *different* origin from the tunnel, so its URL
@@ -27,9 +33,9 @@ ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
-# A Pi has few cores. Letting torch grab all of them for one request starves
+# A Pi has few cores. Letting inference grab all of them for one request starves
 # concurrent requests and thrashes. 2 is a sane default for a 4-core Pi.
-torch.set_num_threads(int(os.getenv("TORCH_THREADS", "2")))
+ORT_THREADS = int(os.getenv("ORT_THREADS", "2"))
 
 
 def get_client_ip(request: Request) -> str:
@@ -74,11 +80,44 @@ app.add_middleware(
 CACHE_MAX_SIZE = 10000  # local memory cache, would likely update to Redis or SQlite in next iterations
 prediction_cache = {}
 
-print(f"Loading DistilBERT model into memory from {MODEL_DIR} ...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR)
-model.eval()
+# --- Model: ONNX Runtime, not torch ---
+#
+# The aarch64 torch wheels are built with SIMD kernels targeting Neoverse-class
+# cores. A Pi 5 (Cortex-A76) has no SVE and no BF16, so libtorch_cpu.so dies with
+# SIGILL the moment it loads. onnxruntime ships baseline ARMv8 builds, is ~50MB
+# instead of ~700MB, and is faster on CPU for a model this size.
+print(f"Loading ONNX model into memory from {MODEL_DIR} ...")
+
+session_options = ort.SessionOptions()
+session_options.intra_op_num_threads = ORT_THREADS
+session_options.inter_op_num_threads = 1
+session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+session = ort.InferenceSession(
+    MODEL_PATH, session_options, providers=["CPUExecutionProvider"]
+)
+
+# tokenizer.json is a self-contained fast-tokenizer definition, so the Pi needs
+# the `tokenizers` package but not all of `transformers` (which would drag torch
+# back in as a dependency).
+tokenizer = Tokenizer.from_file(TOKENIZER_PATH)
+tokenizer.enable_truncation(max_length=MAX_LENGTH)
+
+# tokenizer.json carries a saved padding config (pad every input to 128). That is
+# a training-time setting: transformers ignores it unless you pass padding=...,
+# but the bare Tokenizer honours it. Left on, every request would run attention
+# over ~128 tokens instead of the ~10 a real sentence needs. Results are the same
+# either way -- the attention mask sees to that -- it is purely wasted CPU.
+tokenizer.no_padding()
+
 print("Model loaded.")
+
+
+def softmax(logits: np.ndarray) -> np.ndarray:
+    """Numerically stable softmax over the last axis."""
+    shifted = logits - np.max(logits)
+    exp = np.exp(shifted)
+    return exp / np.sum(exp)
 
 
 class ClaimRequest(BaseModel):
@@ -129,21 +168,18 @@ def predict_claim(request: Request, payload: ClaimRequest):  # Renamed to payloa
         )
 
     # Tokenize. No padding: this is a single sequence, so padding to a fixed 128
-    # tokens just makes the Pi run attention over tokens that are masked out anyway.
-    inputs = tokenizer(
-        input_text,
-        return_tensors="pt",
-        truncation=True,
-        max_length=128
-    )
+    # tokens would just run attention over positions that are masked out anyway.
+    encoding = tokenizer.encode(input_text)
+    inputs = {
+        "input_ids": np.array([encoding.ids], dtype=np.int64),
+        "attention_mask": np.array([encoding.attention_mask], dtype=np.int64),
+    }
 
     # Model Inference
-    with torch.no_grad():
-        outputs = model(**inputs)
-        logits = outputs.logits
+    logits = session.run(None, inputs)[0]
 
-    probs = torch.nn.functional.softmax(logits, dim=-1)
-    confidence_score_decimal = probs[0][1].item()
+    probs = softmax(logits[0])
+    confidence_score_decimal = float(probs[1])
 
     # If the probability is > 50%, we classify it as a claim
     is_claim = bool(confidence_score_decimal > 0.5)

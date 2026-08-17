@@ -17,7 +17,7 @@ This project is a full-stack machine learning application designed to identify w
     - *Rate Limiting*: Per-client-IP limits via SlowAPI, keyed off `CF-Connecting-IP` so it stays accurate behind the tunnel
     - *CORS*: Explicit origin allowlist, since the frontend is served from a different origin than the API
     - _LRU Cache_: An in-memory cache to store common phrases, bypassing model inference for repeated queries to save CPU cycles.
-- **Inference Engine**: A fine-tuned DistilBERT model. 
+- **Inference Engine**: A fine-tuned DistilBERT model, exported to ONNX and served with ONNX Runtime. Training uses PyTorch; the deployed API does not depend on it at all. This is what makes the Pi deployment viable — the aarch64 torch wheels target Neoverse-class cores and crash with `SIGILL` on the Pi 5's Cortex-A76, while ONNX Runtime is 16MB, runs on baseline ARMv8, and benchmarks 3.4x faster on this model. See [deploy/README.md](deploy/README.md#why-onnx-runtime-and-not-pytorch).
 - **Deployment**: Split hosting — the API and weights run on a Raspberry Pi behind a Cloudflare Tunnel; the static frontend is published to GitHub Pages. See **[deploy/README.md](deploy/README.md)**.
 
 # Data Modeling and Trainer 
@@ -82,11 +82,12 @@ the files in out-of-band.
 ## To run locally with a pretrained model
 1. Clone the repo: ```git clone https://github.com/Spicerke/Claim_Detection```
 2. Place the model files in ```App/claim_detection_model/``` (config.json, model.safetensors, tokenizer.json, tokenizer_config.json)
-3. Either:
+3. Export the ONNX graph the API serves: ```python FineTuning/export_onnx.py```
+4. Either:
     - **Docker:** ```docker compose up --build``` then serve the frontend with ```cd App/Frontend && python3 -m http.server 5500```
     - **Native:** ```cd App && ./start.sh``` (runs the API on :8000 and the frontend on :5500)
-4. Point ```App/Frontend/config.js``` at ```http://localhost:8000```
-5. Go to: http://localhost:5500
+5. Point ```App/Frontend/config.js``` at ```http://localhost:8000```
+6. Go to: http://localhost:5500
 
 ## To train your own model 
 1. Clone the repo: ```git clone https://github.com/Spicerke/Claim_Detection```

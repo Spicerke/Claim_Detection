@@ -11,13 +11,14 @@ This project is a full-stack machine learning application designed to identify w
 ![image](Diagram.png)
 ## Breakdown 
 - **Frontend**: 
-    - *HTML/CSS*: Simple webpage allowing users to input text and view classification results (True/False + Confidence %).
-    - *Flask*: In charge of routing data from the HTML webpage to the API and from the API back to the HTML page 
+    - *HTML/CSS/JS*: Static single-page app allowing users to input text and view classification results (True/False + Confidence %). Calls the API directly from the browser with `fetch()` — no server-side rendering, so it can be hosted on a static CDN.
 - **API Gateway** (FastAPI): Handles incoming POST requests. It includes:
-    - *Input Validation*: Input string is length and IP validated to stop DDOS attacks 
+    - *Input Validation*: Input string is length validated to stop DoS via oversized payloads
+    - *Rate Limiting*: Per-client-IP limits via SlowAPI, keyed off `CF-Connecting-IP` so it stays accurate behind the tunnel
+    - *CORS*: Explicit origin allowlist, since the frontend is served from a different origin than the API
     - _LRU Cache_: An in-memory cache to store common phrases, bypassing model inference for repeated queries to save CPU cycles.
 - **Inference Engine**: A fine-tuned DistilBERT model. 
-- **Deployment**: The entire stack is containerized using Docker for environment parity. 
+- **Deployment**: Split hosting — the API and weights run on a Raspberry Pi behind a Cloudflare Tunnel; the static frontend is published to GitHub Pages. See **[deploy/README.md](deploy/README.md)**.
 
 # Data Modeling and Trainer 
 *Datasets: [ClaimBuster](https://zenodo.org/records/3836810) & [FeverClaims](https://fever.ai/dataset/fever.html)*
@@ -61,22 +62,31 @@ In order to ensure that we had a good mix of claims and non-claims along with a 
 - _Result_: 83.95 RPS
     ![FailureGraph](Requests.png)
 
-# Contanerization 
-The application is wrapped in a multi-stage Docker build:
+# Deployment
+
+**Production:** the FastAPI backend and model weights run on a Raspberry Pi
+behind a Cloudflare Tunnel; the static frontend is published to GitHub Pages by
+a GitHub Actions workflow. Full runbook: **[deploy/README.md](deploy/README.md)**.
 
 ```
-# To build 
-docker-compose up --build
-# To run if already build 
-docker-compose up
+Browser ──▶ spicerke.github.io (static HTML/JS)
+   │
+   └── fetch() ──▶ Cloudflare edge ──▶ tunnel ──▶ cloudflared on Pi ──▶ 127.0.0.1:8000
 ```
 
+**Note on weights:** `App/claim_detection_model/` is gitignored — the model is
+~270MB and the training checkpoints another 2.3GB. Train your own (below) or copy
+the files in out-of-band.
 
 # Setup 
-## To run with pretrained model 
+## To run locally with a pretrained model
 1. Clone the repo: ```git clone https://github.com/Spicerke/Claim_Detection```
-2. Run ```docker-compose up --build ```
-3. Go to: http://localhost:5001
+2. Place the model files in ```App/claim_detection_model/``` (config.json, model.safetensors, tokenizer.json, tokenizer_config.json)
+3. Either:
+    - **Docker:** ```docker compose up --build``` then serve the frontend with ```cd App/Frontend && python3 -m http.server 5500```
+    - **Native:** ```cd App && ./start.sh``` (runs the API on :8000 and the frontend on :5500)
+4. Point ```App/Frontend/config.js``` at ```http://localhost:8000```
+5. Go to: http://localhost:5500
 
 ## To train your own model 
 1. Clone the repo: ```git clone https://github.com/Spicerke/Claim_Detection```

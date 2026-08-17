@@ -1,43 +1,43 @@
 #!/bin/bash
+#
+# Local development. Production uses systemd on the Pi + GitHub Pages --
+# see ../deploy/README.md.
+#
+# Serves the static frontend on :5500 and the API on :8000. Point
+# Frontend/config.js at http://localhost:8000 while developing.
 
 echo "Starting Claim Detection Application..."
 
-# This function catches when you press Ctrl+C and cleanly kills both servers
 cleanup() {
     echo ""
     echo "Shutting down servers..."
-    
-    # 1. Kill the standard background jobs known to the shell
     kill $(jobs -p) 2>/dev/null
-    
-    # 2. Aggressively kill the rogue Flask reloader child process holding our ports
-    lsof -t -i:5000 -i:8000 | xargs kill -9 2>/dev/null
-    
+    lsof -t -i:5500 -i:8000 | xargs kill -9 2>/dev/null
     echo "Done."
-    
-    # Ensure the bash script itself exits after cleaning up
     exit 0
 }
 
-# Trap the Ctrl+C signal to trigger the cleanup function
 trap cleanup SIGINT
 
-# 1. Start the FastAPI Backend in the background (&)
-echo "▶ Starting FastAPI backend on port 8000..."
-uvicorn main:app --port 8000 &
+cd "$(dirname "$0")"
 
-# Give the API a quick 2 seconds to boot up before starting the frontend
+# The static frontend runs on a different origin than the API, so the API has to
+# allow it explicitly -- same mechanism as GitHub Pages in production.
+export ALLOWED_ORIGINS="http://localhost:5500,http://127.0.0.1:5500"
+export MODEL_DIR="${MODEL_DIR:-./claim_detection_model}"
+
+echo "▶ Starting FastAPI backend on port 8000..."
+uvicorn main:app --port 8000 --reload &
+
 sleep 2
 
-# 2. Start the Flask Frontend in the background (&)
-echo "▶ Starting Flask frontend on port 5000..."
-cd frontend && python app.py &
+echo "▶ Serving static frontend on port 5500..."
+(cd Frontend && python3 -m http.server 5500) &
 
 echo ""
-echo "👉 Web App:      http://127.0.0.1:5000"
+echo "👉 Web App:      http://127.0.0.1:5500"
 echo "👉 API Docs:     http://127.0.0.1:8000/docs"
 echo "Press Ctrl+C to stop both servers."
 echo ""
 
-# Keep the script running to hold the background jobs open
 wait

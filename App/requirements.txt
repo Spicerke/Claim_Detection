@@ -1,6 +1,14 @@
-fastapi==0.103.1
-uvicorn==0.23.2
-pydantic==2.3.0
-torch
-transformers
-slowapi
+# Backend runtime dependencies (CPU-only; installs clean on Raspberry Pi arm64).
+#
+# On linux/aarch64 the PyPI `torch` wheel is already a CPU build -- the CUDA
+# bundling only happens on x86_64 -- so no special index URL is needed here.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+pydantic>=2.9,<3.0
+slowapi>=0.1.9
+
+# The checkpoint was saved with transformers 5.x (config.json uses the `dtype`
+# key). Pinning to 5.x avoids a silent mismatch on a fresh install.
+transformers>=5.1,<6.0
+torch>=2.4

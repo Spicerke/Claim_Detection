@@ -1,4 +1,12 @@
-version: '3.8'
+# Local development only.
+#
+# Production runs natively under systemd on the Pi (see deploy/README.md) and the
+# frontend is a static site on GitHub Pages, so neither is built here.
+#
+# To preview the frontend against this container:
+#   docker compose up --build
+#   cd App/Frontend && python3 -m http.server 5500
+#   open http://localhost:5500   (config.js must point at http://localhost:8000)
 
 services:
   backend:
@@ -6,16 +14,18 @@ services:
     container_name: claim_backend
     ports:
       - "8000:8000"
+    environment:
+      # Weights are mounted, never baked into the image.
+      MODEL_DIR: /models
+      ALLOWED_ORIGINS: "http://localhost:5500,http://127.0.0.1:5500,https://spicerke.github.io"
+      TORCH_THREADS: "4"
+    volumes:
+      - ./App/claim_detection_model:/models:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
+      # python:slim has no curl, so probe with the stdlib instead.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
       timeout: 5s
       retries: 5
-
-  frontend:
-    build: ./App/frontend
-    container_name: claim_frontend
-    ports:
-      - "5001:5000"
-    depends_on:
-      - backend
+      start_period: 60s
+    restart: unless-stopped

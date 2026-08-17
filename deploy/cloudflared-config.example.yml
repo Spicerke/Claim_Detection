@@ -1,0 +1,25 @@
+# Example cloudflared ingress for the Claim Detection API.
+#
+# On the Pi this file lives at /etc/cloudflared/config.yml (system service) or
+# ~/.cloudflared/config.yml (user service). You already have a tunnel running --
+# the only change needed is adding the hostname -> localhost:8000 ingress rule
+# below and pointing a DNS record at the tunnel.
+
+tunnel: <YOUR-TUNNEL-UUID>
+credentials-file: /etc/cloudflared/<YOUR-TUNNEL-UUID>.json
+
+ingress:
+  # The API. This hostname is what goes into App/Frontend/config.js.
+  - hostname: claims.yourdomain.com
+    service: http://localhost:8000
+    originRequest:
+      # DistilBERT on a Pi CPU: allow a slow first response rather than 502ing.
+      connectTimeout: 30s
+      # Cloudflare's default is 100s; inference is far under that but the
+      # explicit value documents intent.
+      httpHostHeader: claims.yourdomain.com
+
+  # Any other tunnel hostnames you already serve go here, above the catch-all.
+
+  # Required final rule.
+  - service: http_status:404

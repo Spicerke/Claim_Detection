@@ -1,0 +1,25 @@
+# --- Model weights (delivered to the Pi out-of-band, never committed) ---
+App/claim_detection_model/
+FineTuning/results/
+FineTuning/logs/
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- Local env config ---
+.env
+App/.env

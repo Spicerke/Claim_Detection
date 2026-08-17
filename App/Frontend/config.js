@@ -6,4 +6,4 @@
 // origin this page is served from (https://spicerke.github.io) must be listed
 // in the API's ALLOWED_ORIGINS env var.
 // ---------------------------------------------------------------------------
-window.CLAIM_API_BASE = "https://claims.example.com";
+window.CLAIM_API_BASE = "https://claims.kai-spicer.com";

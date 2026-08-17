@@ -28,9 +28,64 @@ Browser ──▶ spicerke.github.io (static HTML/JS)
 ```bash
 uname -m          # must print aarch64, not armv7l
 free -h           # 2GB is tight; the process sits around 700MB-1GB RSS
+df -h /           # need ~2GB free: ~700MB deps + 270MB model + install headroom
+df -h /tmp        # if this says tmpfs, see the ENOSPC note below
 ```
 
-If it prints `armv7l`, reflash with the 64-bit Raspberry Pi OS image.
+If `uname -m` prints `armv7l`, reflash with the 64-bit Raspberry Pi OS image.
+
+### Disk footprint
+
+| | Size |
+|---|---|
+| `torch` | ~350-450 MB |
+| `transformers`, `numpy`, `sympy`, `tokenizers`, and other deps | ~200 MB |
+| `fastapi` + `uvicorn` + `slowapi` | ~10 MB |
+| **venv total** | **~600-700 MB** |
+| model weights | 270 MB |
+| **peak during install** | **~1.5 GB** |
+
+`install-pi.sh` checks for 1500 MB up front and refuses to start otherwise. It
+also passes `--no-cache-dir` (pip otherwise keeps a second full copy of every
+wheel in `~/.cache/pip`) and points `TMPDIR` at a disk-backed scratch directory.
+
+### `[Errno 28] No space left on device`
+
+**Almost always this is torch dragging CUDA onto your GPU-less Pi.** From version
+2.11.0, torch stopped gating its nvidia dependencies on `platform_machine ==
+"x86_64"` — the marker is now just `platform_system == "Linux"`. NVIDIA publishes
+aarch64 wheels, so pip dutifully installs them:
+
+| package | compressed |
+|---|---|
+| `nvidia-cudnn-cu13` | 621 MB |
+| `nvidia-nccl-cu13` | 241 MB |
+| `nvidia-cusparselt-cu13` | 213 MB |
+| `triton` | 176 MB |
+| | **~1.25 GB (~2.5 GB unpacked)** |
+
+Pi OS mounts `/tmp` as a RAM-backed tmpfs (typically half of RAM, so ~1.9 GB on a
+4 GB Pi). Unpacking 2.5 GB into it fails with ENOSPC **even with 49 GB free on
+`/`** — which is what makes this error so confusing.
+
+`App/requirements.txt` pins `torch>=2.4,<2.11` for exactly this reason. Don't
+raise that ceiling for the Pi. Note that the PyTorch CPU index
+(`download.pytorch.org/whl/cpu`) is *not* an alternative — its newest aarch64
+wheel is torch 2.0.1.
+
+Verify you got a clean install:
+
+```bash
+~/Claim_Detection/.venv/bin/pip list 2>/dev/null | grep -ci nvidia   # must be 0
+du -sh ~/Claim_Detection/.venv                                        # ~600-700MB, not 3GB+
+```
+
+Other causes, if the above checks out:
+
+1. **The filesystem was never expanded.** If you flashed a 32GB card but `df -h /`
+   shows only a few GB: `sudo raspi-config --expand-rootfs && sudo reboot`
+2. **Genuinely full.** `sudo apt clean`, then
+   `du -sh /home/* /var/log | sort -rh | head`.
 
 ### 1. Clone the repo on the Pi
 

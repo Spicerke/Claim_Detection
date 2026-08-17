@@ -1,7 +1,4 @@
 # Backend runtime dependencies (CPU-only; installs clean on Raspberry Pi arm64).
-#
-# On linux/aarch64 the PyPI `torch` wheel is already a CPU build -- the CUDA
-# bundling only happens on x86_64 -- so no special index URL is needed here.
 
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
@@ -11,4 +8,17 @@ slowapi>=0.1.9
 # The checkpoint was saved with transformers 5.x (config.json uses the `dtype`
 # key). Pinning to 5.x avoids a silent mismatch on a fresh install.
 transformers>=5.1,<6.0
-torch>=2.4
+
+# The <2.11 ceiling is load-bearing on ARM, not cosmetic.
+#
+# Through 2.10.0, torch gated its CUDA dependencies on
+#   platform_system == "Linux" and platform_machine == "x86_64"
+# so an aarch64 install got a clean CPU-only build. From 2.11.0 the machine gate
+# was dropped and the marker is just platform_system == "Linux" -- so pip happily
+# installs ~1.25GB of nvidia-cudnn/nccl/cusparselt/triton aarch64 wheels (~2.5GB
+# unpacked) onto a Raspberry Pi that has no GPU. That overflows /tmp on Pi OS,
+# where it is a RAM-backed tmpfs, and the install dies with ENOSPC.
+#
+# The PyTorch CPU index (download.pytorch.org/whl/cpu) is not a workaround --
+# its newest aarch64 wheel is torch 2.0.1.
+torch>=2.4,<2.11

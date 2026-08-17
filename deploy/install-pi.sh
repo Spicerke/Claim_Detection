@@ -30,15 +30,39 @@ for f in config.json model.safetensors tokenizer.json tokenizer_config.json; do
 done
 echo "✓ Model files present"
 
+# --- 1b. Check free space before starting a 15-minute install ---
+# The dependency tree lands at ~600-700MB installed, but pip needs roughly
+# double that in flight (download + unpack). Fail now with a clear message
+# rather than dying with ENOSPC partway through the torch install.
+REQUIRED_MB=1500
+AVAIL_MB="$(df -Pm "$REPO" | awk 'NR==2 {print $4}')"
+if (( AVAIL_MB < REQUIRED_MB )); then
+    echo "ERROR: only ${AVAIL_MB}MB free on the filesystem holding $REPO." >&2
+    echo "Need ~${REQUIRED_MB}MB. Try:" >&2
+    echo "  sudo raspi-config --expand-rootfs && sudo reboot   # if the card was never expanded" >&2
+    echo "  sudo apt clean                                     # cached .debs" >&2
+    exit 1
+fi
+echo "✓ ${AVAIL_MB}MB free"
+
 # --- 2. Virtualenv ---
 if [[ ! -d "$REPO/.venv" ]]; then
     echo "Creating virtualenv..."
     python3 -m venv "$REPO/.venv"
 fi
 
+# pip unpacks wheels under TMPDIR. On Pi images where /tmp is a tmpfs, unpacking
+# torch can blow out a RAM-backed /tmp even with plenty of disk free, so point it
+# at a disk-backed scratch dir we control.
+PIP_TMP="$REPO/.piptmp"
+mkdir -p "$PIP_TMP"
+trap 'rm -rf "$PIP_TMP"' EXIT
+
 echo "Installing dependencies (torch is large -- this takes a while on a Pi)..."
-"$REPO/.venv/bin/pip" install --upgrade pip
-"$REPO/.venv/bin/pip" install -r "$REPO/App/requirements.txt"
+# --no-cache-dir: without it pip keeps a second full copy of every wheel in
+# ~/.cache/pip, which is several hundred MB of dead weight on an SD card.
+TMPDIR="$PIP_TMP" "$REPO/.venv/bin/pip" install --no-cache-dir --upgrade pip
+TMPDIR="$PIP_TMP" "$REPO/.venv/bin/pip" install --no-cache-dir -r "$REPO/App/requirements.txt"
 echo "✓ Dependencies installed"
 
 # --- 3. Render and install the systemd unit ---
